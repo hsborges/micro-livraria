@@ -239,12 +239,10 @@ Nesta segunda tarefa, você irá criar um novo microsserviço dedicado à funcio
 
 #### Passo 1
 
-Primeiro, vamos criar um arquivo `.proto` para definir as operações do novo serviço. Crie um arquivo `reviews.proto` no diretório `/proto` com o seguinte conteúdo:
+Primeiro, vamos criar um arquivo `.proto` para definir as operações do novo serviço. Crie um arquivo `review.proto` no diretório `/proto` com o seguinte conteúdo:
 
 ```proto
 syntax = "proto3";
-
-package reviews;
 
 service ReviewService {
     rpc GetReviews(ProductId) returns (ReviewsResponse) {}
@@ -280,7 +278,7 @@ Este arquivo define duas operações principais:
 
 #### Passo 2
 
-Agora, vamos criar a estrutura do novo microsserviço. Crie um diretório `reviews` dentro de `/services` e adicione um arquivo `index.js` com o seguinte conteúdo:
+Agora, vamos criar a estrutura do novo microsserviço. Crie um diretório `review` dentro de `/services` e adicione um arquivo `index.js` com o seguinte conteúdo:
 
 ```js
 const path = require('path');
@@ -288,15 +286,21 @@ const grpc = require('@grpc/grpc-js');
 const protoLoader = require('@grpc/proto-loader');
 
 // Carrega arquivo .proto
-const reviewsProtoPath = path.resolve(__dirname, '../../proto/reviews.proto');
-const reviewsProtoDefinition = protoLoader.loadSync(reviewsProtoPath);
-const reviewsPackageDefinition = grpc.loadPackageDefinition(reviewsProtoDefinition).reviews;
+const reviewsProtoDefinition = protoLoader.loadSync('proto/review.proto', {
+    keepCase: true,
+    longs: String,
+    enums: String,
+    arrays: true,
+});
+
+const reviewsPackageDefinition = grpc.loadPackageDefinition(reviewsProtoDefinition);
 
 // Array para armazenar as avaliações (em um sistema real, seria um banco de dados)
 const reviewsData = [];
 
 // Implementação do serviço
 const server = new grpc.Server();
+
 server.addService(reviewsPackageDefinition.ReviewService.service, {
     // Retorna todas as avaliações de um produto
     GetReviews: (call, callback) => {
@@ -324,26 +328,32 @@ server.addService(reviewsPackageDefinition.ReviewService.service, {
 
 // Inicia o servidor na porta 3003
 server.bindAsync('0.0.0.0:3003', grpc.ServerCredentials.createInsecure(), (error, port) => {
-    console.log('Reviews Service running at http://0.0.0.0:3003');
-    server.start();
+    console.log('Reviews Service running at http://127.0.0.1:3003');
 });
 ```
 
 #### Passo 3
 
-Em seguida, precisamos atualizar o arquivo `controller/index.js` para adicionar as rotas que irão interagir com o novo serviço. Adicione o seguinte código no arquivo `services/controller/index.js`, após o bloco de importação dos outros serviços:
+Em seguida, precisamos criar um arquivo `review.js` em `/services/controller` com o seguinte conteúdo:
 
 ```js
-// Carrega definição do serviço de reviews
-const reviewsProtoPath = path.resolve(__dirname, '../../proto/reviews.proto');
-const reviewsProtoDefinition = protoLoader.loadSync(reviewsProtoPath);
-const reviewsPackageDefinition = grpc.loadPackageDefinition(reviewsProtoDefinition).reviews;
+const grpc = require('@grpc/grpc-js');
+const protoLoader = require('@grpc/proto-loader');
 
-// Cria cliente para o serviço de reviews
-const reviews = new reviewsPackageDefinition.ReviewService('localhost:3003', grpc.credentials.createInsecure());
+const packageDefinition = protoLoader.loadSync('proto/review.proto', {
+    keepCase: true,
+    longs: String,
+    enums: String,
+    arrays: true,
+});
+
+const ReviewService = grpc.loadPackageDefinition(packageDefinition).ReviewService;
+const client = new ReviewService('127.0.0.1:3003', grpc.credentials.createInsecure());
+
+module.exports = client;
 ```
 
-Após isso, adicione as seguintes rotas ao arquivo `services/controller/index.js`:
+E atualize o arquivo `controller/index.js` para adicionar as rotas que irão interagir com o novo serviço. Adicione as seguintes rotas ao arquivo `/services/controller/index.js`:
 
 ```js
 // Rota para obter avaliações de um produto
@@ -366,6 +376,7 @@ app.post('/reviews', (req, res, next) => {
         rating: req.body.rating,
         comment: req.body.comment,
     };
+    console.log('🚀 ~ app.post ~ review:', review);
 
     reviews.AddReview(review, (err, response) => {
         if (err) {
@@ -383,13 +394,13 @@ app.post('/reviews', (req, res, next) => {
 Agora, atualize o arquivo `package.json` para incluir o comando de inicialização do novo serviço. Adicione a seguinte linha ao objeto `scripts`:
 
 ```json
-"start-reviews": "nodemon services/reviews/index.js",
+"start-review": "nodemon services/review/index.js",
 ```
 
 E atualize o comando `start` para incluir o novo serviço:
 
 ```json
-"start": "run-p start-frontend start-controller start-shipping start-inventory start-reviews",
+"start": "run-p start-proxy start-frontend start-controller start-shipping start-inventory start-review",
 ```
 
 #### Testando o Novo Serviço
@@ -492,8 +503,8 @@ index 25ff65c..552a04e 100644
      "description": "Toy example of microservice",
      "main": "",
      "scripts": {
--        "start": "run-p start-frontend start-controller start-shipping start-inventory start-reviews",
-+        "start": "run-p start-frontend start-controller start-inventory",
+-        "start": "run-p start-proxy start-frontend start-controller start-shipping start-inventory start-review",
++        "start": "run-p start-proxy start-frontend start-controller start-inventory start-review",
          "start-controller": "nodemon services/controller/index.js",
          "start-shipping": "nodemon services/shipping/index.js",
          "start-inventory": "nodemon services/inventory/index.js",
