@@ -68,7 +68,7 @@ O exemplo a seguir mostra o arquivo [.proto](https://github.com/hsborges/micro-l
     <img width="70%" src=".github/images/proto-example.png" />
 </p>
 
-Em gRPC, as mensagens (exemplo: `Shippingload`) são formadas por um conjunto de campos, tal como em um `struct` da linguagem C, por exemplo. Todo campo possui um nome (exemplo: `cep`) e um tipo (exemplo: `string`). Além disso, todo campo tem um número inteiro que funciona como um identificador único para o mesmo na mensagem (exemplo: `= 1`). Esse número é usado pela implementação de gRPC para identificar o campo no formato binário de dados usado por gRPC para comunicação distribuída.
+Em gRPC, as mensagens (exemplo: `ShippingPayload`) são formadas por um conjunto de campos, tal como em um `struct` da linguagem C, por exemplo. Todo campo possui um nome (exemplo: `cep`) e um tipo (exemplo: `string`). Além disso, todo campo tem um número inteiro que funciona como um identificador único para o mesmo na mensagem (exemplo: `= 1`). Esse número é usado pela implementação de gRPC para identificar o campo no formato binário de dados usado por gRPC para comunicação distribuída.
 
 Arquivos .proto são usados para gerar **stubs**, que nada mais são do que proxies que encapsulam os detalhes de comunicação em rede, incluindo troca de mensagens, protocolos, etc. Mais detalhes sobre o padrão de projeto Proxy podem ser obtidos no [Capítulo 6](https://engsoftmoderna.info/cap6.html).
 
@@ -144,15 +144,7 @@ message Payload {
 }
 ```
 
-Veja que `ProductResponse` -- isto é, o tipo de retorno da operação -- já está declarado mais abaixo no arquivo `proto`:
-
-```proto
-message ProductsResponse {
-    repeated ProductResponse products = 1;
-}
-```
-
-Ou seja, a resposta da nossa requisição conterá um único campo, do tipo `ProductResponse`, que também já está implementando no mesmo arquivo:
+Veja que `ProductResponse` -- isto é, o tipo de retorno da operação -- já está declarado mais abaixo no arquivo `proto` (ele é o mesmo tipo usado em cada item da lista retornada por `SearchAllProducts`):
 
 ```proto
 message ProductResponse {
@@ -173,7 +165,7 @@ Reforçando, no passo anterior, apenas declaramos a assinatura dessa função. E
 
 Para isso, você precisa implementar a função requerida pelo segundo parâmetro da função `server.addService`, localizada na linha 17 do arquivo [services/inventory/index.js](https://github.com/hsborges/micro-livraria/blob/main/services/inventory/index.js).
 
-De forma semelhante à função `SearchAllProducts`, que já está implementada, você deve adicionar o corpo da função `SearchProductByID` com a lógica de pesquisa de produtos por ID. Este código deve ser adicionado logo após o `SearchAllProducts` na linha 23.
+De forma semelhante à função `SearchAllProducts`, que já está implementada, você deve adicionar o corpo da função `SearchProductByID` com a lógica de pesquisa de produtos por ID. Este código deve ser adicionado logo após o `SearchAllProducts`, isto é, após a linha 22.
 
 ```js
     SearchProductByID: (payload, callback) => {
@@ -200,7 +192,7 @@ A função acima usa o método `find` para pesquisar em `products` pelo ID de pr
 
 Para finalizar, temos que incluir a função `SearchProductByID` em nosso `Controller`. Para isso, você deve incluir uma nova rota `/product/{id}` que receberá o ID do produto como parâmetro. Na definição da rota, você deve também incluir a chamada para o método definido no Passo 3.
 
-Sendo mais específico, o seguinte trecho de código deve ser adicionado na linha 44 do arquivo [services/controller/index.js](https://github.com/hsborges/micro-livraria/blob/main/services/controller/index.js), logo após a rota `/shipping/:cep`.
+Sendo mais específico, o seguinte trecho de código deve ser adicionado após a linha 44 do arquivo [services/controller/index.js](https://github.com/hsborges/micro-livraria/blob/main/services/controller/index.js), logo após a rota `/shipping/:cep`.
 
 ```js
 app.get('/product/:id', (req, res, next) => {
@@ -281,7 +273,6 @@ Este arquivo define duas operações principais:
 Agora, vamos criar a estrutura do novo microsserviço. Crie um diretório `review` dentro de `/services` e adicione um arquivo `index.js` com o seguinte conteúdo:
 
 ```js
-const path = require('path');
 const grpc = require('@grpc/grpc-js');
 const protoLoader = require('@grpc/proto-loader');
 
@@ -332,7 +323,7 @@ server.bindAsync('0.0.0.0:3003', grpc.ServerCredentials.createInsecure(), (error
 });
 ```
 
-#### Passo 3
+### Passo 3
 
 Em seguida, precisamos criar um arquivo `review.js` em `/services/controller` com o seguinte conteúdo:
 
@@ -353,7 +344,13 @@ const client = new ReviewService('127.0.0.1:3003', grpc.credentials.createInsecu
 module.exports = client;
 ```
 
-E atualize o arquivo `controller/index.js` para adicionar as rotas que irão interagir com o novo serviço. Adicione as seguintes rotas ao arquivo `/services/controller/index.js`:
+Em seguida, atualize o arquivo `/services/controller/index.js`. Primeiro, importe o cliente do novo serviço logo após a linha `const inventory = require('./inventory');`:
+
+```js
+const reviews = require('./review');
+```
+
+Depois, adicione as rotas que irão interagir com o novo serviço logo após a rota `/product/:id` (criada na Tarefa #1):
 
 ```js
 // Rota para obter avaliações de um produto
@@ -388,7 +385,7 @@ app.post('/reviews', (req, res, next) => {
 });
 ```
 
-#### Passo 4
+### Passo 4
 
 Agora, atualize o arquivo `package.json` para incluir o comando de inicialização do novo serviço. Adicione a seguinte linha ao objeto `scripts`:
 
@@ -400,6 +397,18 @@ E atualize o comando `start` para incluir o novo serviço:
 
 ```json
 "start": "run-p start-proxy start-frontend start-controller start-shipping start-inventory start-review",
+```
+
+Faça o mesmo para o comando `exec` (que executa os serviços sem o `nodemon`), adicionando a linha:
+
+```json
+"exec-review": "node services/review/index.js",
+```
+
+E atualizando o comando `exec`:
+
+```json
+"exec": "run-p start-proxy start-frontend exec-controller exec-shipping exec-inventory exec-review",
 ```
 
 #### Testando o Novo Serviço
@@ -436,7 +445,7 @@ Como nosso primeiro objetivo é didático, iremos criar apenas uma imagem Docker
 
 Caso você não tenha o Docker instalado em sua máquina, é preciso instalá-lo antes de iniciar a tarefa. Um passo-a-passo de instalação pode ser encontrado na [documentação oficial](https://docs.docker.com/get-docker/).
 
-#### Passo 1
+### Passo 1
 
 Crie um arquivo na raiz do projeto com o nome `shipping.Dockerfile`. Este arquivo armazenará as instruções para criação de uma imagem Docker para o serviço `Shipping`.
 
@@ -491,7 +500,7 @@ O `./` no final indica que estamos executando os comandos do Dockerfile tendo co
 
 ### Passo 3
 
-Antes de iniciar o serviço via container Docker, precisamos remover a inicialização dos serviços de Shipping e Reviews do comando `npm run start`. Para isso, basta remover os sub-comandos `start-shipping` e `start-reviews` do arquivo [package.json](https://github.com/hsborges/micro-livraria/blob/main/package.json), conforme mostrado no próximo diff (as linhas com o símbolo "-" no início representam as linhas originais do arquivo; as linhas com o símbolo "+" representam como essas linhas devem ficar após a sua alteração):
+Antes de iniciar o serviço via container Docker, precisamos remover a inicialização do serviço de Shipping do comando `npm run start`. Para isso, basta remover o sub-comando `start-shipping` do arquivo [package.json](https://github.com/hsborges/micro-livraria/blob/main/package.json), conforme mostrado no próximo diff (as linhas com o símbolo "-" no início representam as linhas originais do arquivo; as linhas com o símbolo "+" representam como essas linhas devem ficar após a sua alteração):
 
 ```diff
 diff --git a/package.json b/package.json
@@ -529,7 +538,7 @@ onde:
 Se tudo estiver correto, você irá receber a seguinte mensagem em seu terminal:
 
 ```text
-Shipping Service running
+Shipping Service running at http://127.0.0.1:3001
 ```
 
 E o Controller pode acessar o serviço diretamente através do container Docker.
